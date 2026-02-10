@@ -1,4 +1,4 @@
-## Run the Docker Image on your Instance
+## Steps for pulling the pre-build Docker Image from Docker Hub in your Instance
 
 1.  **Install Docker on Instance**:
 ```bash

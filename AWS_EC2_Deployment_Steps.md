@@ -1,3 +1,6 @@
+
+## Steps for Building the Docker Image on your AWS EC2 Instance
+
 ## Launch an EC2 Instance
 
 1. **Log into AWS Console** - Navigate to the EC2 Dashboard from the Services menu under Compute
@@ -44,7 +47,7 @@ sudo apt install git -y  # Ubuntu
 
 2. Clone your repository:
 ```bash
-git clone https://github.com/omkarbs23/insurance-agent.git
+git clone https://github.com/Gr8Learning-2312/insurance-agent.git
 cd insurance-agent
 ```
 
@@ -62,17 +65,17 @@ Enter
 
 4. Build your Docker image:
 ```bash
-sudo docker build -t insurance-agent-image:latest .
+sudo docker build -t insurance-agent:v1 .
 ```
 
 5. Check your Docker image:
 ```bash
-sudo docker images insurance-agent-image:latest
+sudo docker images insurance-agent:v1
 ```
  
 6. Run your Docker image:
 ```bash
-sudo docker run -d -p 80:8501 insurance-agent-image:latest
+sudo docker run -d -p 80:8501 insurance-agent:v1
 ```
 
 7. Visit your Private IP in any browser
