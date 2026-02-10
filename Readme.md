@@ -34,10 +34,10 @@ An AI-powered insurance claims processing system using **LangGraph**, **RAG**, a
 <br>
 
 1. **Clone the repository**
-```bash
-git clone https://github.com/Gr8Learning-2312/insurance-agent.git
-cd insurance-agent
-```
+    ```bash
+    git clone https://github.com/Gr8Learning-2312/insurance-agent.git
+    cd insurance-agent
+    ```
 
 2.  **Create a virtual environment** (recommended):
     ```bash
