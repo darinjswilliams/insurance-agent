@@ -25,7 +25,7 @@ sudo docker images
 sudo docker run -d \
   --name insurance-agent \
   --restart unless-stopped \
-  -e OPENAI_API_KEY=" < YOUR OPENAI API KEY > " \       
+  -e OPENAI_API_KEY=" < YOUR OPENAI API KEY > " \
   -e OPENAI_BASE_URL=" < YOUR OPENAI BASE URL > " \
   -p 80:8501 \
   gr8learning/insurance-agent:v1
