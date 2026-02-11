@@ -191,11 +191,13 @@ def main():
         - **RAG** for policy retrieval
         - **GPT-4o-mini** for intelligent decision making
         """)
+
+        
         
         st.header("📊 System Status")
         st.metric("Vector Store", "✅ Active" if st.session_state.get("vector_store_initialized") else "⏳ Loading")
         st.metric("Model", config.model_name)
-        st.metric("Policy Documents", policy_store.collection.count() if st.session_state.get("vector_store_initialized") else 0)
+        st.metric("Policy Documents", policy_store.count() if st.session_state.get("vector_store_initialized") else 0)
         
         st.markdown("---")
         st.caption(f"Powered by LangChain & LangGraph")

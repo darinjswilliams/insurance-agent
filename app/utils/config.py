@@ -55,5 +55,15 @@ class Config:
     def coverage_csv_path(self) -> str:
         return os.getenv("COVERAGE_CSV_PATH", "./data/coveragedata.csv")
 
+    @property
+    def pinecone_api_key(self) -> str:
+        return os.getenv("PINECONE_API_KEY")
+    
+    
+    @property
+    def pinecone_index_name(self) -> str:
+        return os.getenv("PINECONE_INDEX_NAME")
+    
+
 # Global config instance
 config = Config()

@@ -1,7 +1,4 @@
-"""ChromaDB vector store with OpenAI embeddings"""
-import chromadb
-from chromadb.config import Settings
-from chromadb.utils import embedding_functions
+from pinecone import Pinecone, ServerlessSpec
 from typing import List, Dict, Any, Optional
 import PyPDF2
 from pathlib import Path
@@ -9,36 +6,61 @@ import os
 
 from app.utils.config import config
 from app.utils.logger import logger
-
+from openai import OpenAI
 class PolicyVectorStore:
-    """Manages ChromaDB collection for insurance policy documents"""
+    """Manages Pinecone collection for insurance policy documents"""
     
     def __init__(self):
-        logger.info("Initializing ChromaDB vector store")
+        logger.info("Initializing Pinecone vector store")
         
         # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(
-            path=config.chroma_persist_directory,
-            settings=Settings(anonymized_telemetry=False)
+        #Initialize Pinecone client 
+        self.pc = Pinecone(api_key=config.pinecone_api_key)
+
+        # Ensure index exists 
+        self.index_name = config.pinecone_index_name
+
+        if self.index_name not in [idx["name"] for idx in self.pc.list_indexes()]:
+         logger.info(f"Creating Pinecone index: {self.index_name}") 
+         self.pc.create_index( 
+            name=self.index_name,
+            dimension=1536, # match your embedding model 
+            metric="cosine",
+            spec=ServerlessSpec( cloud="aws", region="us-east-1" 
+            )
         )
-        
-        # ✅ Use OpenAI embedding function
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=config.openai_api_key,
-            model_name=config.embedding_model  # "text-embedding-3-small"
-        )
+
+        self.index = self.pc.Index(self.index_name)
+
         logger.info(f"Using OpenAI embedding model: {config.embedding_model}")
         
-        # Get or create collection with embedding function
-        self.collection = self.client.get_or_create_collection(
-            name=config.chroma_collection_name,
-            embedding_function=self.embedding_function,  # ✅ ChromaDB handles embeddings automatically
-            metadata={"description": "Insurance policy documents"}
-        )
+        # OpenAI client for embeddings
+        self.openai = OpenAI(api_key=config.openai_api_key)
+        self.embedding_model = config.embedding_model
         
-        logger.info(f"ChromaDB collection '{config.chroma_collection_name}' ready")
-        logger.info(f"Current document count: {self.collection.count()}")
+        logger.info(f"Using OpenAI embedding model: {self.embedding_model}")
+        logger.info(f"Pinecone index '{self.index_name}' ready")
     
+    def _embed_texts(self, texts: List[str]) -> List[List[float]]:
+        """Embed a list of texts using OpenAI"""
+        
+        response = self.openai.embeddings.create(
+            model=self.embedding_model,
+            input=texts
+        )
+        return [item.embedding for item in response.data]
+
+
+    def _embed_query(self, query: str) -> List[float]:
+        """Embed a single query string"""
+        response = self.openai.embeddings.create(
+            model=self.embedding_model,
+            input=query
+        )
+        return response.data[0].embedding
+
+
+
     def load_pdf_policy(self, pdf_path: str) -> List[Dict[str, Any]]:
         """Extract text chunks from policy PDF"""
         logger.info(f"Loading policy PDF: {pdf_path}")
@@ -80,44 +102,77 @@ class PolicyVectorStore:
         pdf_path = pdf_path or config.policy_pdf_path
         
         # Check if already populated
-        if self.collection.count() > 0:
-            logger.info("Collection already populated. Skipping.")
+        stats = self.index.describe_index_stats()
+
+        if stats.get("total_vector_count", 0) > 0:
+            logger.info("Index already populated. Skipping.")
             return
-        
+
+        # Load PDF into chunks
         chunks = self.load_pdf_policy(pdf_path)
         if not chunks:
             logger.warning("No chunks extracted from PDF")
             return
         
         logger.info("Adding chunks to vector store (embeddings generated automatically)")
-        
-        # ✅ ChromaDB automatically generates embeddings when we add documents
-        self.collection.add(
-            documents=[chunk["text"] for chunk in chunks],  # No manual embeddings needed!
-            metadatas=[{"page": c["page"], "source": c["source"]} for c in chunks],
-            ids=[f"chunk_{i}" for i in range(len(chunks))]
-        )
-        
-        logger.info(f"Successfully added {len(chunks)} chunks to vector store")
+
+        # 1. Extract raw text
+        texts = [chunk["text"] for chunk in chunks]
+
+        # 2. Generate embeddings (Pinecone does NOT do this automatically)
+        embeddings = self._embed_texts(texts)
+
+        # 3. Build Pinecone vector objects
+        vectors =[]
+        for i, text in enumerate(texts):
+            vectors.append({
+                "id": f"chunk_{i}",
+                "values": embeddings[i],
+                "metadata": {
+                    "text": chunks[i]["text"],
+                    "page": chunks[i]["page"],
+                    "source": chunks[i]["source"]
+                }
+            })
+
+        #Upload to Pinecone
+        self.index.upsert(vectors)
+    
+
+        logger.info(f"Successfully added {len(chunks)} chunks to Pinecone")
     
     def retrieve(self, query: str, top_k: int = 5) -> str:
         """Retrieve relevant policy text for a query"""
         logger.info(f"Retrieving policy text for query: {query[:100]}...")
         
-        # ✅ ChromaDB automatically embeds the query using the same model
-        results = self.collection.query(
-            query_texts=[query],  # Just pass the text - no manual embedding!
-            n_results=top_k
+        # ✅ 1. Embed the query manually (Pinecone does NOT auto-embed)
+        query_embedding = self._embed_query(query)
+
+        # 2. Query Pinecone
+        results = self.index.query(
+            vector=query_embedding,
+            top_k=top_k,
+            include_metadata=True
         )
-        
-        if not results['documents'] or not results['documents'][0]:
+
+
+        # 3. Handle no results
+        if not results.matches:
             logger.warning("No relevant policy documents found")
-            return ""
+            return
+      
+        # 4. Extract the text from metadata
+        retrieved_chunks = [match.metadata["text"] for match in results.matches]
+       
+        logger.info(f"Retrieved {len(retrieved_chunks)} relevant chunks")
         
-        retrieved_text = "\n\n".join(results['documents'][0])
-        logger.info(f"Retrieved {len(results['documents'][0])} relevant chunks")
-        
-        return retrieved_text
+        # 5. Return combined text (same behavior as Chroma)
+        return "\n\n".join(retrieved_chunks)
+
+    def count(self) -> int: 
+        """Return total number of vectors stored in the Pinecone index.""" 
+        stats = self.index.describe_index_stats()
+        return stats.get("total_vector_count", 0)
 
 # Global vector store instance
 policy_store = PolicyVectorStore()
